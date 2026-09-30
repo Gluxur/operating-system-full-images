@@ -36,47 +36,14 @@ fetch_versions() {
 
 fetch_container() {
     local name="$1"
-    local version="$2"
-    local arch="$3"
-    local output_dir="$4"
-    local versions_file="$5"
+    local arch="$2"
+    local output_dir="$3"
+    local versions_file="$4"
 
     local image
     image=$(get_container_image "$versions_file" "$name")
 
-    local docker_arch
-    docker_arch=$(get_docker_arch "$arch")
-
-    # Check if already downloaded (match by image name prefix)
-    local image_prefix="${image//[:\/]/_}"
-    if ls "${output_dir}/${image_prefix}"@*.tar &>/dev/null; then
-        log "Container already cached: $name"
-        return 0
-    fi
-
-    log "Fetching Docker image: $image"
-
-    # Get image digest
-    local digest
-    digest=$(skopeo inspect --override-arch "${docker_arch}" "docker://${image}" | jq -r '.Digest')
-    if [ -z "$digest" ] || [ "$digest" = "null" ]; then
-        die "Failed to get digest for $image"
-    fi
-
-    log "Digest: $digest"
-
-    # Build filename: image_name@digest.tar (replace : and / with _)
-    local output_file="${output_dir}/${image_prefix}@${digest//[:\/]/_}.tar"
-
-    # Use skopeo to fetch as docker archive
-    skopeo copy \
-        --override-arch "${docker_arch}" \
-        "docker://${image}" \
-        "oci-archive:${output_file}:${image}"
-
-    local size
-    size=$(stat -c%s "$output_file")
-    log "Downloaded $name: $(bytes_to_human "$size")"
+    fetch_image_archive "$image" "$arch" "$output_dir" > /dev/null
 }
 
 main() {
@@ -114,7 +81,7 @@ main() {
             die "No version found for $container"
         fi
 
-        fetch_container "$container" "$version" "$arch" "$images_dir" "$versions_file"
+        fetch_container "$container" "$arch" "$images_dir" "$versions_file"
     done
 
     log "Container fetch complete"

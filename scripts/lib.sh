@@ -18,6 +18,7 @@ XZ_COMPRESSION_LEVEL="${XZ_COMPRESSION_LEVEL:-3}"
 XZ_THREADS="${XZ_THREADS:-0}"
 SECTOR_SIZE="${SECTOR_SIZE:-512}"
 DIND_IMAGE="${DIND_IMAGE:-docker:dind}"
+APPS_CONFIG="${APPS_CONFIG:-/config/apps.yaml}"
 
 #
 # Path helpers (evaluated at call time)
@@ -58,6 +59,15 @@ get_original_data_path() {
 
 get_original_settings_path() {
     echo "${WORK_DIR}/original/settings"
+}
+
+get_apps_file_path() {
+    local board="$1"
+    echo "${CACHE_DIR}/apps-${board}.json"
+}
+
+get_repositories_cache_path() {
+    echo "${CACHE_DIR}/repositories"
 }
 
 #
@@ -398,6 +408,76 @@ get_container_image_name() {
         die "No image pattern found for container: $container"
     fi
     echo "$image"
+}
+
+# Get the cache filename prefix for an image reference (name:tag)
+get_image_cache_prefix() {
+    local image="$1"
+    echo "${image//[:\/]/_}"
+}
+
+# Find a cached image archive for an image reference, empty if not cached
+find_cached_image() {
+    local image="$1"
+    local images_dir="$2"
+    local image_prefix
+    image_prefix=$(get_image_cache_prefix "$image")
+    ls "${images_dir}/${image_prefix}"@*.tar 2>/dev/null | head -1 || true
+}
+
+# Fetch an image reference (name:tag) as OCI archive into the images directory
+# Skips the download if the image is already cached. Prints the archive path.
+# Usage: fetch_image_archive <image> <haos_arch> <images_dir>
+fetch_image_archive() {
+    local image="$1"
+    local arch="$2"
+    local images_dir="$3"
+
+    local docker_arch
+    docker_arch=$(get_docker_arch "$arch")
+
+    local cached
+    cached=$(find_cached_image "$image" "$images_dir")
+    if [ -n "$cached" ]; then
+        log "Image already cached: $image"
+        echo "$cached"
+        return 0
+    fi
+
+    log "Fetching Docker image: $image"
+
+    # Get image digest
+    local digest
+    digest=$(skopeo inspect --override-arch "${docker_arch}" "docker://${image}" | jq -r '.Digest')
+    if [ -z "$digest" ] || [ "$digest" = "null" ]; then
+        die "Failed to get digest for $image"
+    fi
+
+    log "Digest: $digest"
+
+    # Build filename: image_name@digest.tar (replace : and / with _)
+    local output_file
+    output_file="${images_dir}/$(get_image_cache_prefix "$image")@${digest//[:\/]/_}.tar"
+
+    # Use skopeo to fetch as OCI archive tagged with the image reference
+    skopeo copy \
+        --override-arch "${docker_arch}" \
+        "docker://${image}" \
+        "oci-archive:${output_file}:${image}" >&2
+
+    log "Downloaded $image: $(bytes_to_human "$(stat -c%s "$output_file")")"
+    echo "$output_file"
+}
+
+#
+# App store helpers
+#
+
+# Supervisor repository slug: first 8 chars of sha1 of the lowercased
+# repository string (including an optional #branch suffix)
+get_repository_hash() {
+    local repository="$1"
+    printf '%s' "${repository,,}" | sha1sum | cut -c1-8
 }
 
 #

@@ -19,7 +19,7 @@ CHANNEL ?= stable
 # Find input images
 INPUT_IMAGES := $(wildcard $(INPUT_DIR)/haos_*.img.xz $(INPUT_DIR)/haos_*.qcow2.xz)
 
-.PHONY: help build build-all fetch-containers clean clean-all extract prepare analyze split extract-data create-data reassemble
+.PHONY: help build build-all fetch-containers fetch-apps clean clean-all extract prepare analyze split extract-data create-data reassemble
 
 # Default target
 help:
@@ -29,12 +29,14 @@ help:
 	@echo "  make build IMAGE=<path>    Build a single full image"
 	@echo "  make build-all             Build all images in INPUT_DIR"
 	@echo "  make fetch-containers      Fetch container images for a board"
+	@echo "  make fetch-apps            Fetch custom apps for a board"
 	@echo "  make clean                 Clean work directory"
 	@echo "  make clean-all             Clean work and output directories"
 	@echo ""
 	@echo "Options:"
 	@echo "  IMAGE=<path>               Path to HAOS image (*.img.xz or *.qcow2.xz)"
 	@echo "  CHANNEL=<channel>          Version channel: stable, beta, dev (default: stable)"
+	@echo "  APPS_CONFIG=<path>         Custom apps configuration (default: /config/apps.yaml)"
 	@echo ""
 	@echo "Found input images:"
 	@for img in $(INPUT_IMAGES); do echo "  - $$img"; done
@@ -80,6 +82,8 @@ _build-image:
 	$(SCRIPT_DIR)/extract-data.sh
 	@# Fetch containers
 	$(SCRIPT_DIR)/fetch-containers.sh "$(BOARD)" "$(CHANNEL)"
+	@# Fetch custom apps (repositories and images)
+	$(SCRIPT_DIR)/fetch-apps.sh "$(BOARD)"
 	@# Create new data partition
 	$(SCRIPT_DIR)/create-data.sh "$(BOARD)" "$(CHANNEL)"
 	@# Reassemble image
@@ -92,6 +96,14 @@ ifndef BOARD
 	$(error BOARD is required. Usage: make fetch-containers BOARD=<board>)
 endif
 	$(SCRIPT_DIR)/fetch-containers.sh "$(BOARD)" "$(CHANNEL)"
+	$(SCRIPT_DIR)/fetch-apps.sh "$(BOARD)"
+
+# Fetch custom apps for a board
+fetch-apps:
+ifndef BOARD
+	$(error BOARD is required. Usage: make fetch-apps BOARD=<board>)
+endif
+	$(SCRIPT_DIR)/fetch-apps.sh "$(BOARD)"
 
 # Clean work directory
 clean:

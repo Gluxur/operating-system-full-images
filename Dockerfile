@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     e2fsprogs \
     fdisk \
+    git \
     gnupg \
     jq \
     make \
@@ -22,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     skopeo \
     util-linux \
     xz-utils \
+    yq \
     zip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -56,7 +58,7 @@ RUN mkdir -p /opt/haos-builder && \
     echo "${DIND_IMAGE}" > /opt/haos-builder/dind.image
 
 # Create work directories
-RUN mkdir -p /work /input /output /cache
+RUN mkdir -p /work /input /output /cache /config
 
 # Copy scripts and config
 COPY scripts/ /opt/haos-builder/scripts/

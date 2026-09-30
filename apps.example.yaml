@@ -1,0 +1,34 @@
+# Custom apps configuration for the HAOS full image builder.
+#
+# Copy this file to apps.yaml (picked up automatically by `make build`) or
+# point APPS_CONFIG to it. JSON is accepted as well.
+
+# App repositories added to the app store (built-in repositories are always
+# present). Use "<url>#<branch>" to track a specific branch.
+repositories:
+  - https://github.com/alexbelgium/hassio-addons
+
+# Apps pre-installed in the image. The repository of each app is added to the
+# store automatically, so it does not need to be listed above.
+apps:
+  - repository: https://github.com/home-assistant/addons-example
+    # Slug of the app as declared in its config.yaml
+    slug: example
+
+    # Optional: container image to use instead of the one declared by the app.
+    # Required for apps that are built locally (no "image" in config.yaml).
+    # "{arch}" is replaced by the board architecture (amd64, aarch64).
+    # image: ghcr.io/my-org/{arch}-app-example
+
+    # Optional: image tag to use instead of the app version from the repository
+    # version: 1.3.1
+
+    # Optional: app settings
+    boot: auto            # auto or manual
+    auto_update: false
+    watchdog: true
+    ingress_panel: true
+    options:
+      message: "Hello from the full image"
+    # network:
+    #   8080/tcp: 8080

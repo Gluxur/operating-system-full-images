@@ -85,6 +85,17 @@ get_board_image_files() {
 
         echo "$image_file"
     done
+
+    # Custom app images
+    local apps_file
+    apps_file=$(get_apps_file_path "$board")
+    if [ -f "$apps_file" ]; then
+        local archive
+        while IFS= read -r archive; do
+            [ -f "$archive" ] || die "App image not found in cache: $archive"
+            echo "$archive"
+        done < <(jq -r '.apps[].archive' "$apps_file")
+    fi
 }
 
 import_containers() {
@@ -189,6 +200,78 @@ configure_supervisor() {
     log "Supervisor configuration complete"
 }
 
+generate_token() {
+    openssl rand -base64 32 | tr '+/' '-_' | tr -d '='
+}
+
+configure_apps() {
+    local board="$1"
+
+    local apps_file
+    apps_file=$(get_apps_file_path "$board")
+    if [ ! -f "$apps_file" ] || jq -e '(.repositories | length) == 0' "$apps_file" > /dev/null; then
+        log "No custom apps configured"
+        return 0
+    fi
+
+    local new_data supervisor_dir repos_dir
+    new_data=$(get_data_content_path)
+    supervisor_dir="${new_data}/supervisor"
+    repos_dir=$(get_repositories_cache_path)
+
+    log "Configuring custom apps..."
+
+    # Legacy "addons" layout and file names are used on purpose: every
+    # Supervisor version reads them, newer ones migrate them to "apps"
+    mkdir -p "${supervisor_dir}/addons/git" "${supervisor_dir}/addons/data"
+
+    # Register repositories in the store (built-in ones are added by Supervisor)
+    local store_config="${supervisor_dir}/store.json"
+    jq '{repositories: [.repositories[].url]}' "$apps_file" > "$store_config"
+    log "Store repositories:"
+    cat "$store_config"
+
+    # Pre-clone repositories so the store works without network on first boot
+    local hash
+    while IFS= read -r hash; do
+        require_directory "${repos_dir}/${hash}"
+        rsync -a "${repos_dir}/${hash}/" "${supervisor_dir}/addons/git/${hash}/"
+    done < <(jq -r '.repositories[].hash' "$apps_file")
+
+    # Mark apps as installed
+    local apps_config="${supervisor_dir}/addons.json"
+    local installed='{"user": {}, "system": {}}'
+    local app_json slug
+    while IFS= read -r app_json; do
+        slug=$(jq -r '.slug' <<< "$app_json")
+        log "Installing app: $slug"
+
+        mkdir -p "${supervisor_dir}/addons/data/${slug}"
+
+        installed=$(jq -c \
+            --argjson app "$app_json" \
+            --arg uuid "$(cat /proc/sys/kernel/random/uuid | tr -d '-')" \
+            --arg ingress_token "$(generate_token)" \
+            '.system[$app.slug] = ($app.config + {
+                repository: $app.repository,
+                location: ("/data/addons/git/" + $app.repository
+                    + (if $app.path == "" then "" else "/" + $app.path end)),
+                translations: $app.translations
+            })
+            | .user[$app.slug] = ({
+                version: $app.version,
+                image: $app.image,
+                uuid: $uuid,
+                ingress_token: $ingress_token,
+                options: {},
+                protected: true
+            } + $app.user)' <<< "$installed")
+    done < <(jq -c '.apps[]' "$apps_file")
+
+    jq . <<< "$installed" > "$apps_config"
+    log "Installed apps: $(jq -r '.user | keys | join(", ")' "$apps_config")"
+}
+
 copy_preserved_data() {
     local old_data new_data
     old_data=$(get_original_data_path)
@@ -274,6 +357,9 @@ main() {
 
     # Configure supervisor to use pre-loaded images and correct channel
     configure_supervisor "$board" "$versions_file" "$channel"
+
+    # Register custom app repositories and pre-installed apps
+    configure_apps "$board"
 
     # Copy preserved files from old data partition
     copy_preserved_data

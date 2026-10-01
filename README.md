@@ -104,3 +104,7 @@ make build IMAGE=haos_green-17.0.img.xz REGISTRY_AUTH_FILE=~/.docker/config.json
 
 The GitHub workflow picks up an `apps.yaml` committed at the root of the
 repository.
+
+To build only some boards with the "Build single channel images" workflow, set
+the `boards` input to a comma or space separated list (e.g. `green, rpi4-64`);
+leave it empty to build all boards.

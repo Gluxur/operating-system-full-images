@@ -12,6 +12,15 @@ on:
           - stable
           - beta
           - dev
+      boards:
+        description: >-
+          Target boards, comma or space separated (empty = all boards).
+          e.g. green, yellow, rpi3-64, rpi4-64, rpi5-64, generic-x86-64,
+          generic-aarch64, ova, odroid-c2, odroid-c4, odroid-m1, odroid-m1s,
+          odroid-n2, khadas-vim3
+        required: false
+        default: ""
+        type: string
 
 permissions: {}
 
@@ -32,6 +41,7 @@ jobs:
         id: matrix
         env:
           CHANNEL: ${{ inputs.channel }}
+          BOARDS: ${{ inputs.boards }}
         run: |
           echo "::group::Generate build matrix for channel=${CHANNEL}"
           version_file="version-${CHANNEL}.json"
@@ -63,6 +73,19 @@ jobs:
             ]
             | sort_by(.board)
           ' "$version_file")"
+
+          # Keep only the requested boards (all boards when none requested)
+          requested_json="$(jq -Rc 'split("[ ,]+"; null) | map(select(length > 0)) | unique' <<< "${BOARDS}")"
+          if [ "$(jq 'length' <<< "$requested_json")" -gt 0 ]; then
+            unknown="$(jq -rn --argjson requested "$requested_json" --argjson matrix "$matrix_json" \
+              '$requested - ($matrix | map(.board)) | join(", ")')"
+            if [ -n "$unknown" ]; then
+              echo "::error::Unknown board(s) for channel ${CHANNEL}: ${unknown}. Available: $(jq -r 'map(.board) | join(", ")' <<< "$matrix_json")"
+              exit 1
+            fi
+            matrix_json="$(jq -c --argjson requested "$requested_json" \
+              'map(select(.board as $b | $requested | index($b)))' <<< "$matrix_json")"
+          fi
 
           {
             echo "matrix<<EOF"

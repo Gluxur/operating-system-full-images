@@ -71,6 +71,8 @@ repositories:
   - https://github.com/alexbelgium/hassio-addons
 
 apps:
+  - repository: core        # official repository
+    slug: mosquitto
   - repository: https://github.com/home-assistant/addons-example
     slug: example
     image: ghcr.io/home-assistant/app-example   # optional override

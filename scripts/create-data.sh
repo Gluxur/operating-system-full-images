@@ -227,16 +227,18 @@ configure_apps() {
 
     # Register repositories in the store (built-in ones are added by Supervisor)
     local store_config="${supervisor_dir}/store.json"
-    jq '{repositories: [.repositories[].url]}' "$apps_file" > "$store_config"
+    jq '{repositories: [.repositories[] | select(.slug != "core") | .url]}' "$apps_file" > "$store_config"
     log "Store repositories:"
     cat "$store_config"
 
     # Pre-clone repositories so the store works without network on first boot
-    local hash
-    while IFS= read -r hash; do
-        require_directory "${repos_dir}/${hash}"
-        rsync -a "${repos_dir}/${hash}/" "${supervisor_dir}/addons/git/${hash}/"
-    done < <(jq -r '.repositories[].hash' "$apps_file")
+    local repo_slug location
+    while IFS= read -r repo_slug; do
+        require_directory "${repos_dir}/${repo_slug}"
+        location=$(get_repository_location "$repo_slug")
+        mkdir -p "${supervisor_dir}/addons/${location}"
+        rsync -a "${repos_dir}/${repo_slug}/" "${supervisor_dir}/addons/${location}/"
+    done < <(jq -r '.repositories[].slug' "$apps_file")
 
     # Mark apps as installed
     local apps_config="${supervisor_dir}/addons.json"
@@ -250,11 +252,12 @@ configure_apps() {
 
         installed=$(jq -c \
             --argjson app "$app_json" \
+            --arg location "/data/addons/$(get_repository_location "$(jq -r '.repository' <<< "$app_json")")" \
             --arg uuid "$(cat /proc/sys/kernel/random/uuid | tr -d '-')" \
             --arg ingress_token "$(generate_token)" \
             '.system[$app.slug] = ($app.config + {
                 repository: $app.repository,
-                location: ("/data/addons/git/" + $app.repository
+                location: ($location
                     + (if $app.path == "" then "" else "/" + $app.path end)),
                 translations: $app.translations
             })

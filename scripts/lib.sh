@@ -473,11 +473,52 @@ fetch_image_archive() {
 # App store helpers
 #
 
-# Supervisor repository slug: first 8 chars of sha1 of the lowercased
-# repository string (including an optional #branch suffix)
-get_repository_hash() {
+# Official app repository, built into Supervisor as "core"
+CORE_REPOSITORY_URL="https://github.com/home-assistant/addons"
+
+# Normalize a repository: the official repository (URL or "core") becomes "core"
+normalize_repository() {
     local repository="$1"
+    local normalized="${repository,,}"
+    normalized="${normalized%/}"
+    normalized="${normalized%.git}"
+    if [ "$normalized" = "core" ] || [ "$normalized" = "${CORE_REPOSITORY_URL,,}" ]; then
+        echo "core"
+    else
+        echo "$repository"
+    fi
+}
+
+# Supervisor repository slug: "core" for the official repository, otherwise
+# first 8 chars of sha1 of the lowercased repository string (including an
+# optional #branch suffix)
+get_repository_slug() {
+    local repository="$1"
+    if [ "$repository" = "core" ]; then
+        echo "core"
+        return 0
+    fi
     printf '%s' "${repository,,}" | sha1sum | cut -c1-8
+}
+
+# Git URL (with optional #branch) to clone a repository from
+get_repository_clone_url() {
+    local repository="$1"
+    if [ "$repository" = "core" ]; then
+        echo "$CORE_REPOSITORY_URL"
+    else
+        echo "$repository"
+    fi
+}
+
+# Repository location relative to the Supervisor apps directory
+get_repository_location() {
+    local slug="$1"
+    if [ "$slug" = "core" ]; then
+        echo "core"
+    else
+        echo "git/${slug}"
+    fi
 }
 
 #

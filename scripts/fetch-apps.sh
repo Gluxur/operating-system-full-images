@@ -34,10 +34,12 @@ clone_repository() {
     local repository="$1"
     local repo_dir="$2"
 
-    local url="${repository%%#*}"
+    local clone_url
+    clone_url=$(get_repository_clone_url "$repository")
+    local url="${clone_url%%#*}"
     local branch=""
-    if [[ "$repository" == *"#"* ]]; then
-        branch="${repository#*#}"
+    if [[ "$clone_url" == *"#"* ]]; then
+        branch="${clone_url#*#}"
     fi
 
     log "Cloning repository: $repository"
@@ -48,7 +50,9 @@ clone_repository() {
         ${branch:+--branch "$branch"} "$url" "$tmp_dir" >&2 \
         || die "Failed to clone repository: $repository"
 
+    # The official repository has no repository.yaml
     local validated=0
+    [ "$repository" = "core" ] && validated=1
     for ext in yaml yml json; do
         if [ -f "${tmp_dir}/repository.${ext}" ]; then
             validated=1
@@ -111,7 +115,7 @@ resolve_app() {
     local repository slug repo_hash
     repository=$(jq -r '.repository' <<< "$app_json")
     slug=$(jq -r '.slug' <<< "$app_json")
-    repo_hash=$(get_repository_hash "$repository")
+    repo_hash=$(get_repository_slug "$repository")
 
     local repo_dir="${repos_dir}/${repo_hash}"
     local app_path
@@ -206,13 +210,26 @@ main() {
     repos_dir=$(get_repositories_cache_path)
     mkdir -p "$images_dir" "$repos_dir"
 
+    # Normalize repositories (official repository becomes "core")
+    local normalized="$config"
+    local i
+    for i in $(jq -r '.repositories | keys[]' <<< "$config"); do
+        normalized=$(jq -c --argjson i "$i" --arg r "$(normalize_repository "$(jq -r ".repositories[$i]" <<< "$config")")" \
+            '.repositories[$i] = $r' <<< "$normalized")
+    done
+    for i in $(jq -r '.apps | keys[]' <<< "$config"); do
+        normalized=$(jq -c --argjson i "$i" --arg r "$(normalize_repository "$(jq -r ".apps[$i].repository" <<< "$config")")" \
+            '.apps[$i].repository = $r' <<< "$normalized")
+    done
+    config="$normalized"
+
     # All repositories: explicitly listed ones plus the ones of the apps
     local repositories_json
     repositories_json=$(jq -c '(.repositories + (.apps | map(.repository))) | unique' <<< "$config")
 
     local repository
     while IFS= read -r repository; do
-        clone_repository "$repository" "${repos_dir}/$(get_repository_hash "$repository")"
+        clone_repository "$repository" "${repos_dir}/$(get_repository_slug "$repository")"
     done < <(jq -r '.[]' <<< "$repositories_json")
 
     # Resolve and fetch each app
@@ -225,8 +242,8 @@ main() {
 
     local repos_resolved="[]"
     while IFS= read -r repository; do
-        repos_resolved=$(jq -c --arg url "$repository" --arg hash "$(get_repository_hash "$repository")" \
-            '. + [{url: $url, hash: $hash}]' <<< "$repos_resolved")
+        repos_resolved=$(jq -c --arg url "$repository" --arg slug "$(get_repository_slug "$repository")" \
+            '. + [{url: $url, slug: $slug}]' <<< "$repos_resolved")
     done < <(jq -r '.[]' <<< "$repositories_json")
 
     jq -n --argjson repositories "$repos_resolved" --argjson apps "$apps_json" \

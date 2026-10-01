@@ -1,0 +1,16 @@
+# Custom apps embedded in the built images (see apps.example.yaml)
+
+apps:
+  # Mosquitto MQTT broker, from the official app repository
+  - repository: core
+    slug: mosquitto
+    boot: auto
+    watchdog: true
+
+  # Zigbee2MQTT. Configure the "serial" option for your Zigbee adapter after
+  # first boot; MQTT settings are discovered from the Mosquitto app.
+  - repository: https://github.com/zigbee2mqtt/hassio-zigbee2mqtt
+    slug: zigbee2mqtt
+    boot: auto
+    watchdog: true
+    ingress_panel: true

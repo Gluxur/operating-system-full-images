@@ -410,6 +410,22 @@ get_container_image_name() {
     echo "$image"
 }
 
+# Fully qualify an image reference (docker.io registry and library namespace)
+# Docker's containerd image store can't resolve images loaded from an OCI
+# archive under a short name such as "homeassistant/image:tag"
+normalize_image_reference() {
+    local image="$1"
+    local first="${image%%/*}"
+
+    if [[ "$image" != */* ]]; then
+        echo "docker.io/library/${image}"
+    elif [[ "$first" == *.* || "$first" == *:* || "$first" == "localhost" ]]; then
+        echo "$image"
+    else
+        echo "docker.io/${image}"
+    fi
+}
+
 # Get the cache filename prefix for an image reference (name:tag)
 get_image_cache_prefix() {
     local image="$1"
@@ -429,7 +445,8 @@ find_cached_image() {
 # Skips the download if the image is already cached. Prints the archive path.
 # Usage: fetch_image_archive <image> <haos_arch> <images_dir>
 fetch_image_archive() {
-    local image="$1"
+    local image
+    image=$(normalize_image_reference "$1")
     local arch="$2"
     local images_dir="$3"
 
